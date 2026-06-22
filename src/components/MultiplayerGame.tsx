@@ -7,6 +7,7 @@ import HUD from './HUD'
 import VictoryScreen from './VictoryScreen'
 import type { MazeData } from '../lib/mazeGenerator'
 import type { Direction } from '../hooks/useGameLoop'
+import { useSwipe } from '../hooks/useSwipe'
 
 interface MultiplayerGameProps {
   maze: MazeData
@@ -34,6 +35,7 @@ export default function MultiplayerGame({
   const startTimeRef = useRef<number>(0)
   const clockRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastSyncRef = useRef<number>(0)
+  const swipeRef = useRef<HTMLDivElement>(null)
 
   const updateHostPos = useMutation(api.gameRooms.updateHostPos)
   const updateGuestPos = useMutation(api.gameRooms.updateGuestPos)
@@ -122,6 +124,9 @@ export default function MultiplayerGame({
     })
   }, [maze, roomId, isHost, countdown, finished, updateHostPos, updateGuestPos, finishHost, finishGuest])
 
+  // Swipe (mobile)
+  useSwipe(handleMove, swipeRef)
+
   // Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -138,8 +143,15 @@ export default function MultiplayerGame({
     return () => window.removeEventListener('keydown', onKey)
   }, [handleMove])
 
+  const liveData = {
+    roomCode: room?.roomCode,
+    myPos,
+    opponentPos,
+    roomStatus: room?.status,
+  }
+
   return (
-    <div className="relative w-full h-full">
+    <div ref={swipeRef} className="relative w-full h-full" style={{ touchAction: 'none' }}>
       <Suspense fallback={
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="font-orbitron text-lg neon-text-cyan">Loading 3D Scene...</span>
@@ -160,6 +172,7 @@ export default function MultiplayerGame({
         mode="multiplayer"
         opponentUsername={opponentUsername}
         onMove={handleMove}
+        liveData={liveData}
       />
 
       {countdown !== null && (

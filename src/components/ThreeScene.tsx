@@ -150,6 +150,8 @@ interface ThreeSceneProps {
   showGuest?: boolean
 }
 
+const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+
 export default function ThreeScene({ maze, playerPos, enemyPos, guestPos, showEnemy, showGuest }: ThreeSceneProps) {
   const midX = ((maze.width - 1) * CELL) / 2
   const midZ = ((maze.height - 1) * CELL) / 2
@@ -197,6 +199,8 @@ export default function ThreeScene({ maze, playerPos, enemyPos, guestPos, showEn
         minDistance={5}
         maxDistance={60}
         enablePan={false}
+        enableRotate={!isMobile}
+        enableZoom={!isMobile}
       />
     </Canvas>
   )

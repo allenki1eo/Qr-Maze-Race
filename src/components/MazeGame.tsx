@@ -1,8 +1,9 @@
-import { Suspense } from 'react'
+import { Suspense, useRef } from 'react'
 import ThreeScene from './ThreeScene'
 import HUD from './HUD'
 import VictoryScreen from './VictoryScreen'
 import { useGameLoop } from '../hooks/useGameLoop'
+import { useSwipe } from '../hooks/useSwipe'
 import type { MazeData } from '../lib/mazeGenerator'
 
 interface MazeGameProps {
@@ -13,9 +14,11 @@ interface MazeGameProps {
 
 export default function MazeGame({ maze, difficulty, onMenu }: MazeGameProps) {
   const { state, movePlayer, reset } = useGameLoop(maze, difficulty)
+  const swipeRef = useRef<HTMLDivElement>(null)
+  useSwipe(movePlayer, swipeRef)
 
   return (
-    <div className="relative w-full h-full">
+    <div ref={swipeRef} className="relative w-full h-full" style={{ touchAction: 'none' }}>
       <Suspense fallback={
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="font-orbitron text-lg neon-text-cyan">Loading 3D Scene...</span>
@@ -35,6 +38,7 @@ export default function MazeGame({ maze, difficulty, onMenu }: MazeGameProps) {
         endPos={maze.end}
         mode="solo"
         onMove={movePlayer}
+        liveData={{ myPos: state.playerPos }}
       />
 
       {state.finished && (
