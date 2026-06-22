@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 interface VictoryScreenProps {
   won: boolean
   elapsedMs: number
+  score?: number
   opponentUsername?: string
   opponentTime?: number
   onPlayAgain: () => void
@@ -35,7 +36,7 @@ function Particle({ delay }: { delay: number }) {
   )
 }
 
-export default function VictoryScreen({ won, elapsedMs, opponentUsername, opponentTime, onPlayAgain, onMenu, mode }: VictoryScreenProps) {
+export default function VictoryScreen({ won, elapsedMs, score, opponentUsername, opponentTime, onPlayAgain, onMenu, mode }: VictoryScreenProps) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -96,13 +97,23 @@ export default function VictoryScreen({ won, elapsedMs, opponentUsername, oppone
             : mode === 'solo' ? 'The enemy caught you.' : `${opponentUsername ?? 'Opponent'} reached the exit first.`}
         </p>
 
-        {/* Time card */}
+        {/* Time + Score card */}
         <div
           className="rounded-xl p-6 mb-4"
           style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.3)' }}
         >
-          <div className="font-orbitron text-xs text-gray-400 uppercase tracking-widest mb-1">Your Time</div>
-          <div className="font-orbitron text-3xl neon-text-gold">{formatTime(elapsedMs)}</div>
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="font-orbitron text-xs text-gray-400 uppercase tracking-widest mb-1">Your Time</div>
+              <div className="font-orbitron text-3xl neon-text-gold">{formatTime(elapsedMs)}</div>
+            </div>
+            {score !== undefined && won && (
+              <div className="text-right">
+                <div className="font-orbitron text-xs text-gray-400 uppercase tracking-widest mb-1">Score</div>
+                <div className="font-orbitron text-3xl" style={{ color: '#00ff88', textShadow: '0 0 15px #00ff88' }}>{score.toLocaleString()}</div>
+              </div>
+            )}
+          </div>
         </div>
 
         {mode === 'multiplayer' && opponentTime !== undefined && (

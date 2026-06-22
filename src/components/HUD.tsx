@@ -9,6 +9,7 @@ interface LiveData {
 
 interface HUDProps {
   elapsedMs: number
+  score: number
   playerPos: { x: number; y: number }
   endPos: { x: number; y: number }
   mode: 'solo' | 'multiplayer'
@@ -111,7 +112,7 @@ function LivePanel({ liveData }: { liveData: LiveData }) {
   )
 }
 
-export default function HUD({ elapsedMs, playerPos, endPos, mode, opponentUsername, onMove, liveData }: HUDProps) {
+export default function HUD({ elapsedMs, score, playerPos, endPos, mode, opponentUsername, onMove, liveData }: HUDProps) {
   const dist = Math.abs(playerPos.x - endPos.x) + Math.abs(playerPos.y - endPos.y)
 
   return (
@@ -121,9 +122,15 @@ export default function HUD({ elapsedMs, playerPos, endPos, mode, opponentUserna
         className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-10"
         style={{ background: 'linear-gradient(to bottom, rgba(10,10,15,0.9), transparent)', pointerEvents: 'none' }}
       >
-        <div className="flex items-center gap-3">
-          <span className="font-orbitron text-xs text-gray-400 uppercase tracking-widest">Time</span>
-          <span className="font-orbitron text-2xl neon-text-gold">{formatTime(elapsedMs)}</span>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span className="font-orbitron text-xs text-gray-400 uppercase tracking-widest">Time</span>
+            <span className="font-orbitron text-xl neon-text-gold">{formatTime(elapsedMs)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-orbitron text-xs text-gray-400 uppercase tracking-widest">Score</span>
+            <span className="font-orbitron text-lg" style={{ color: '#00ff88', textShadow: '0 0 10px #00ff88' }}>{score.toLocaleString()}</span>
+          </div>
         </div>
 
         <div className="text-center">

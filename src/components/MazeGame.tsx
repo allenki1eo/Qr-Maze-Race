@@ -12,11 +12,18 @@ interface MazeGameProps {
   onMenu: () => void
 }
 
+function calcScore(elapsedMs: number, difficulty: 'easy' | 'medium' | 'hard'): number {
+  const multiplier = difficulty === 'hard' ? 3 : difficulty === 'medium' ? 2 : 1
+  return Math.max(0, (10000 - Math.floor(elapsedMs / 1000) * 10) * multiplier)
+}
+
 export default function MazeGame({ maze, difficulty, onMenu }: MazeGameProps) {
   const { state, movePlayer, reset } = useGameLoop(maze, difficulty)
 
   const swipeRef = useRef<HTMLDivElement>(null)
   useSwipe(movePlayer, swipeRef)
+
+  const score = calcScore(state.elapsedMs, difficulty)
 
   return (
     <div ref={swipeRef} className="relative w-full h-full" style={{ touchAction: 'none' }}>
@@ -35,6 +42,7 @@ export default function MazeGame({ maze, difficulty, onMenu }: MazeGameProps) {
 
       <HUD
         elapsedMs={state.elapsedMs}
+        score={score}
         playerPos={state.playerPos}
         endPos={maze.end}
         mode="solo"
@@ -46,6 +54,7 @@ export default function MazeGame({ maze, difficulty, onMenu }: MazeGameProps) {
         <VictoryScreen
           won={state.won}
           elapsedMs={state.elapsedMs}
+          score={state.won ? score : 0}
           mode="solo"
           onPlayAgain={reset}
           onMenu={onMenu}

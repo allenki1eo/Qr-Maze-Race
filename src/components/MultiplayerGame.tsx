@@ -143,6 +143,8 @@ export default function MultiplayerGame({
     return () => window.removeEventListener('keydown', onKey)
   }, [handleMove])
 
+  const score = Math.max(0, (10000 - Math.floor(elapsedMs / 1000) * 10))
+
   const liveData = {
     roomCode: room?.roomCode,
     myPos,
@@ -167,6 +169,7 @@ export default function MultiplayerGame({
 
       <HUD
         elapsedMs={elapsedMs}
+        score={score}
         playerPos={myPos}
         endPos={maze.end}
         mode="multiplayer"
@@ -191,6 +194,7 @@ export default function MultiplayerGame({
         <VictoryScreen
           won={won}
           elapsedMs={elapsedMs}
+          score={won ? score : 0}
           opponentUsername={opponentUsername}
           opponentTime={opponentTime}
           mode="multiplayer"
