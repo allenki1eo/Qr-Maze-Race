@@ -14,6 +14,7 @@ interface MazeGameProps {
 
 export default function MazeGame({ maze, difficulty, onMenu }: MazeGameProps) {
   const { state, movePlayer, reset } = useGameLoop(maze, difficulty)
+
   const swipeRef = useRef<HTMLDivElement>(null)
   useSwipe(movePlayer, swipeRef)
 
