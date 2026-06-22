@@ -1,4 +1,7 @@
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react'
+import { useMutation, useQuery } from 'convex/react'
+import { api } from '../../convex/_generated/api'
+import type { Id } from '../../convex/_generated/dataModel'
 import ThreeScene from './ThreeScene'
 import HUD from './HUD'
 import VictoryScreen from './VictoryScreen'
@@ -7,58 +10,48 @@ import type { Direction } from '../hooks/useGameLoop'
 
 interface MultiplayerGameProps {
   maze: MazeData
+  roomId: Id<'gameRooms'>
   isHost: boolean
   myUsername: string
   opponentUsername: string
-  roomCode: string
   onMenu: () => void
 }
 
-// Shared race state simulation (in-memory bus — Convex mutations replace this in prod)
-const raceState: Record<string, {
-  hostPos: { x: number; y: number }
-  guestPos: { x: number; y: number }
-  hostFinished: boolean
-  guestFinished: boolean
-  hostTime?: number
-  guestTime?: number
-  startTime: number
-}> = {}
-
 export default function MultiplayerGame({
   maze,
+  roomId,
   isHost,
   myUsername: _myUsername,
   opponentUsername,
-  roomCode,
   onMenu,
 }: MultiplayerGameProps) {
   const [myPos, setMyPos] = useState({ x: 0, y: 0 })
-  const [opponentPos, setOpponentPos] = useState({ x: 0, y: 0 })
   const [elapsedMs, setElapsedMs] = useState(0)
   const [finished, setFinished] = useState(false)
   const [won, setWon] = useState(false)
-  const [opponentTime, setOpponentTime] = useState<number | undefined>()
   const [countdown, setCountdown] = useState<number | null>(3)
 
   const startTimeRef = useRef<number>(0)
   const clockRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const syncRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastSyncRef = useRef<number>(0)
 
-  // Initialize shared state
-  useEffect(() => {
-    if (!raceState[roomCode]) {
-      raceState[roomCode] = {
-        hostPos: { x: 0, y: 0 },
-        guestPos: { x: 0, y: 0 },
-        hostFinished: false,
-        guestFinished: false,
-        startTime: Date.now() + 3500,
-      }
-    }
-  }, [roomCode])
+  const updateHostPos = useMutation(api.gameRooms.updateHostPos)
+  const updateGuestPos = useMutation(api.gameRooms.updateGuestPos)
+  const finishHost = useMutation(api.gameRooms.finishHost)
+  const finishGuest = useMutation(api.gameRooms.finishGuest)
+  const startRace = useMutation(api.gameRooms.startRace)
 
-  // Countdown then start
+  const room = useQuery(api.gameRooms.getById, { roomId })
+
+  const opponentPos = room
+    ? (isHost ? room.guestPos ?? { x: 0, y: 0 } : room.hostPos)
+    : { x: 0, y: 0 }
+
+  const opponentTime = room
+    ? (isHost ? room.guestTime : room.hostTime)
+    : undefined
+
+  // Countdown → start
   useEffect(() => {
     let n = 3
     setCountdown(n)
@@ -68,6 +61,7 @@ export default function MultiplayerGame({
         clearInterval(t)
         setCountdown(null)
         startTimeRef.current = Date.now()
+        if (isHost) startRace({ roomId })
         clockRef.current = setInterval(() => {
           setElapsedMs(Date.now() - startTimeRef.current)
         }, 100)
@@ -76,24 +70,19 @@ export default function MultiplayerGame({
       }
     }, 1000)
     return () => clearInterval(t)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync opponent position
+  // Watch for opponent finishing (real-time via Convex subscription)
   useEffect(() => {
-    syncRef.current = setInterval(() => {
-      const state = raceState[roomCode]
-      if (!state) return
-      const theirPos = isHost ? state.guestPos : state.hostPos
-      setOpponentPos({ ...theirPos })
-
-      const theyFinished = isHost ? state.guestFinished : state.hostFinished
-      if (theyFinished && !finished) {
-        const theirTime = isHost ? state.guestTime : state.hostTime
-        setOpponentTime(theirTime)
-      }
-    }, 100)
-    return () => clearInterval(syncRef.current!)
-  }, [roomCode, isHost, finished])
+    if (!room || finished) return
+    const theyFinished = isHost ? room.guestFinished : room.hostFinished
+    if (theyFinished && !finished) {
+      // We haven't finished yet, so they won
+      setFinished(true)
+      setWon(false)
+      clearInterval(clockRef.current!)
+    }
+  }, [room, finished, isHost])
 
   const handleMove = useCallback((dir: Direction) => {
     if (countdown !== null || finished) return
@@ -112,30 +101,26 @@ export default function MultiplayerGame({
 
       const newPos = { x: nx, y: ny }
 
-      // Push to shared state
-      const state = raceState[roomCode]
-      if (state) {
-        if (isHost) state.hostPos = newPos
-        else state.guestPos = newPos
+      // Throttle Convex sync to ~10 updates/sec
+      const now = Date.now()
+      if (now - lastSyncRef.current > 100) {
+        lastSyncRef.current = now
+        if (isHost) updateHostPos({ roomId, pos: newPos })
+        else updateGuestPos({ roomId, pos: newPos })
       }
 
       // Check win
       if (nx === maze.end.x && ny === maze.end.y) {
-        const myTime = Date.now() - startTimeRef.current
-        if (state) {
-          if (isHost) { state.hostFinished = true; state.hostTime = myTime }
-          else { state.guestFinished = true; state.guestTime = myTime }
-        }
-        const opponentAlreadyFinished = state ? (isHost ? state.guestFinished : state.hostFinished) : false
+        if (isHost) finishHost({ roomId })
+        else finishGuest({ roomId })
         setFinished(true)
-        setWon(!opponentAlreadyFinished)
+        setWon(true)
         clearInterval(clockRef.current!)
-        clearInterval(syncRef.current!)
       }
 
       return newPos
     })
-  }, [maze, roomCode, isHost, countdown, finished])
+  }, [maze, roomId, isHost, countdown, finished, updateHostPos, updateGuestPos, finishHost, finishGuest])
 
   // Keyboard
   useEffect(() => {
@@ -177,16 +162,12 @@ export default function MultiplayerGame({
         onMove={handleMove}
       />
 
-      {/* Countdown overlay */}
       {countdown !== null && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none" style={{ background: 'rgba(10,10,15,0.6)' }}>
           <div
             key={countdown}
             className="font-orbitron font-black neon-text-gold"
-            style={{
-              fontSize: '15vw',
-              animation: 'countdown 0.9s ease-in-out forwards',
-            }}
+            style={{ fontSize: '15vw', animation: 'countdown 0.9s ease-in-out forwards' }}
           >
             {countdown === 0 ? 'GO!' : countdown}
           </div>
@@ -200,14 +181,8 @@ export default function MultiplayerGame({
           opponentUsername={opponentUsername}
           opponentTime={opponentTime}
           mode="multiplayer"
-          onPlayAgain={() => {
-            delete raceState[roomCode]
-            onMenu()
-          }}
-          onMenu={() => {
-            delete raceState[roomCode]
-            onMenu()
-          }}
+          onPlayAgain={onMenu}
+          onMenu={onMenu}
         />
       )}
     </div>

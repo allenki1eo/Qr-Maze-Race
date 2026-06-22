@@ -6,6 +6,7 @@ import MultiplayerLobby from './components/MultiplayerLobby'
 import MultiplayerGame from './components/MultiplayerGame'
 import Leaderboard from './components/Leaderboard'
 import { generateMaze, deserializeMaze, type MazeData } from './lib/mazeGenerator'
+import type { Id } from '../convex/_generated/dataModel'
 
 type Screen =
   | 'landing'
@@ -17,6 +18,7 @@ type Screen =
   | 'leaderboard'
 
 interface MultiRoomParams {
+  roomId: Id<'gameRooms'>
   roomCode: string
   qrData: string
   mazeData: string
@@ -240,10 +242,10 @@ export default function App() {
         <div className="absolute inset-0 z-20">
           <MultiplayerGame
             maze={maze}
+            roomId={multiParams.roomId}
             isHost={multiParams.isHost}
             myUsername={username}
             opponentUsername={multiParams.isHost ? (multiParams.guestUsername ?? 'Guest') : (multiParams.hostUsername ?? 'Host')}
-            roomCode={multiParams.roomCode}
             onMenu={() => setScreen('landing')}
           />
         </div>

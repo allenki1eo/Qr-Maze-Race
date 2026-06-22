@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useMutation, useQuery } from 'convex/react'
+import { api } from '../../convex/_generated/api'
 import { generateRoomCode, qrDataToDataURL } from '../lib/qrUtils'
 import { generateMaze, serializeMaze } from '../lib/mazeGenerator'
+import type { Id } from '../../convex/_generated/dataModel'
 import QRScanner from './QRScanner'
 
 type LobbyStep = 'choose' | 'createQR' | 'waitingRoom' | 'joinRoom'
@@ -8,6 +11,7 @@ type LobbyStep = 'choose' | 'createQR' | 'waitingRoom' | 'joinRoom'
 interface MultiplayerLobbyProps {
   username: string
   onRoomReady: (params: {
+    roomId: Id<'gameRooms'>
     roomCode: string
     qrData: string
     mazeData: string
@@ -18,78 +22,98 @@ interface MultiplayerLobbyProps {
   onBack: () => void
 }
 
-// ---------- Simulated in-memory room store (offline demo fallback) ----------
-const rooms: Record<string, {
-  roomCode: string
-  qrData: string
-  mazeData: string
-  hostUsername: string
-  guestUsername?: string
-  status: 'waiting' | 'ready'
-}> = {}
-
 export default function MultiplayerLobby({ username, onRoomReady, onBack }: MultiplayerLobbyProps) {
   const [step, setStep] = useState<LobbyStep>('choose')
   const [roomCode, setRoomCode] = useState('')
+  const [roomId, setRoomId] = useState<Id<'gameRooms'> | null>(null)
   const [joinCode, setJoinCode] = useState('')
   const [qrData, setQrData] = useState('')
   const [mazeData, setMazeData] = useState('')
   const [hostQrUrl, setHostQrUrl] = useState('')
   const [error, setError] = useState('')
-  const [waiting, setWaiting] = useState(false)
+  const [joining, setJoining] = useState(false)
 
-  const handleQRGenerated = useCallback(({ qrData: qd, mazeData: md }: { qrData: string; mazeData: string }) => {
+  const createRoom = useMutation(api.gameRooms.create)
+  const joinRoom = useMutation(api.gameRooms.join)
+
+  // Poll the room we created, waiting for a guest to join
+  const room = useQuery(
+    api.gameRooms.getById,
+    roomId ? { roomId } : 'skip'
+  )
+
+  // When guest joins, transition to game
+  useEffect(() => {
+    if (!room || !roomId) return
+    if (room.guestId && room.guestUsername && step === 'waitingRoom') {
+      onRoomReady({
+        roomId,
+        roomCode,
+        qrData,
+        mazeData,
+        isHost: true,
+        guestUsername: room.guestUsername,
+      })
+    }
+  }, [room, roomId, roomCode, qrData, mazeData, step, onRoomReady])
+
+  const handleQRDecoded = useCallback(async (qd: string) => {
+    setError('')
+    const m = generateMaze(qd)
+    const md = serializeMaze(m)
     setQrData(qd)
     setMazeData(md)
+
     const code = generateRoomCode()
     setRoomCode(code)
-    // Store in demo rooms
-    rooms[code] = { roomCode: code, qrData: qd, mazeData: md, hostUsername: username, status: 'waiting' }
+
+    const id = await createRoom({
+      roomCode: code,
+      qrData: qd,
+      mazeData: md,
+      hostId: username,
+      hostUsername: username,
+    })
+    setRoomId(id)
     qrDataToDataURL(code).then(setHostQrUrl)
     setStep('waitingRoom')
-  }, [username])
+  }, [username, createRoom])
 
-  // Poll for guest joining (demo mode — Convex replaces this in prod)
-  useEffect(() => {
-    if (step !== 'waitingRoom') return
-    const timer = setInterval(() => {
-      const room = rooms[roomCode]
-      if (room?.guestUsername) {
-        clearInterval(timer)
-        onRoomReady({
-          roomCode,
-          qrData,
-          mazeData,
-          isHost: true,
-          guestUsername: room.guestUsername,
-        })
-      }
-    }, 500)
-    return () => clearInterval(timer)
-  }, [step, roomCode, qrData, mazeData, onRoomReady])
-
-  const handleJoin = useCallback(() => {
+  const handleJoin = useCallback(async () => {
     setError('')
-    const code = joinCode.trim()
-    const room = rooms[code]
-    if (!room) { setError('Room not found. Check the code and try again.'); return }
-    if (room.status !== 'waiting') { setError('Room is no longer available.'); return }
-    if (room.guestUsername) { setError('Room is full.'); return }
-
-    room.guestUsername = username
-    room.status = 'ready'
-    setWaiting(true)
-
-    setTimeout(() => {
-      onRoomReady({
-        roomCode: code,
-        qrData: room.qrData,
-        mazeData: room.mazeData,
-        isHost: false,
-        hostUsername: room.hostUsername,
+    setJoining(true)
+    try {
+      const id = await joinRoom({
+        roomCode: joinCode.trim(),
+        guestId: username,
+        guestUsername: username,
       })
-    }, 1000)
-  }, [joinCode, username, onRoomReady])
+      // Fetch room data to get qrData/mazeData
+      setRoomId(id)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to join room')
+      setJoining(false)
+    }
+  }, [joinCode, username, joinRoom])
+
+  // After joining as guest, get the room data and transition
+  const joinedRoom = useQuery(
+    api.gameRooms.getById,
+    roomId && joining ? { roomId } : 'skip'
+  )
+  useEffect(() => {
+    if (!joinedRoom || !joining || !roomId) return
+    if (joinedRoom.guestId === username) {
+      onRoomReady({
+        roomId,
+        roomCode: joinedRoom.roomCode,
+        qrData: joinedRoom.qrData,
+        mazeData: joinedRoom.mazeData,
+        isHost: false,
+        hostUsername: joinedRoom.hostUsername,
+      })
+    }
+  }, [joinedRoom, joining, roomId, username, onRoomReady])
 
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-sm px-4">
@@ -124,12 +148,7 @@ export default function MultiplayerLobby({ username, onRoomReady, onBack }: Mult
         <>
           <h2 className="font-orbitron text-xl font-bold neon-text-gold uppercase tracking-widest">Choose Your Maze</h2>
           <p className="font-orbitron text-xs text-gray-400 text-center">The QR code determines the maze layout.</p>
-          <QRScanner
-            onQRDecoded={(qd) => {
-              const m = generateMaze(qd)
-              handleQRGenerated({ qrData: qd, mazeData: serializeMaze(m) })
-            }}
-          />
+          <QRScanner onQRDecoded={handleQRDecoded} />
           <button onClick={() => setStep('choose')} className="font-orbitron text-xs text-gray-500 hover:text-gray-300 transition-colors uppercase tracking-widest">
             ← Back
           </button>
@@ -140,7 +159,6 @@ export default function MultiplayerLobby({ username, onRoomReady, onBack }: Mult
         <>
           <h2 className="font-orbitron text-xl font-bold neon-text-gold uppercase tracking-widest">Waiting for Opponent</h2>
 
-          {/* Room code display */}
           <div
             className="rounded-xl px-8 py-5 text-center"
             style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.4)' }}
@@ -150,7 +168,6 @@ export default function MultiplayerLobby({ username, onRoomReady, onBack }: Mult
             <p className="font-orbitron text-xs text-gray-500 mt-2">Share this code with your friend</p>
           </div>
 
-          {/* Or QR code to scan */}
           {hostQrUrl && (
             <div className="text-center">
               <p className="font-orbitron text-xs text-gray-500 mb-2 uppercase tracking-widest">Or scan to join</p>
@@ -188,11 +205,11 @@ export default function MultiplayerLobby({ username, onRoomReady, onBack }: Mult
 
           <button
             onClick={handleJoin}
-            disabled={joinCode.length !== 6 || waiting}
+            disabled={joinCode.length !== 6 || joining}
             className="neon-btn w-full py-4 rounded-xl font-orbitron text-sm font-bold uppercase tracking-widest hover:scale-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: 'rgba(0,255,255,0.15)', border: '2px solid #00ffff', color: '#00ffff' }}
           >
-            {waiting ? 'Joining...' : 'Join →'}
+            {joining ? 'Joining...' : 'Join →'}
           </button>
 
           <button onClick={() => setStep('choose')} className="font-orbitron text-xs text-gray-500 hover:text-gray-300 transition-colors uppercase tracking-widest">
